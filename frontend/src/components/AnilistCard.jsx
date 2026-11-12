@@ -1,13 +1,12 @@
 import { Link } from "react-router-dom";
 
-function AnilistCard({ anime }) {
+function AnilistCard({ anime, isFavorite = false, onFavoriteToggle }) {
   if (!anime) return null;
 
   const title = anime.title?.userPreferred || anime.title?.english || anime.title?.romaji || anime.title || "Untitled anime";
   const image = anime.coverImage?.extraLarge || anime.coverImage?.large || anime.image;
   const genres = anime.genres?.slice(0, 2).join(" · ");
   const score = anime.averageScore ? `${(anime.averageScore / 10).toFixed(1)} / 10` : "ยังไม่มีคะแนน";
-
   return (
     <article className="group overflow-hidden rounded-2xl border border-white/10 bg-[#111426] transition duration-300 hover:-translate-y-1 hover:border-red-400/50 hover:shadow-xl hover:shadow-red-950/20">
       <Link to={`/anilist/${anime.id}`} className="block">
@@ -25,6 +24,15 @@ function AnilistCard({ anime }) {
           </div>
         </div>
       </Link>
+      {onFavoriteToggle && (
+        <button
+          type="button"
+          onClick={() => onFavoriteToggle(anime)}
+          className="mx-4 mb-4 w-[calc(100%-2rem)] rounded-lg border border-red-400/40 px-3 py-2 text-sm font-semibold text-red-300 transition hover:bg-red-500/15"
+        >
+          {isFavorite ? "♥ นำออกจากรายการโปรด" : "♡ เพิ่มในรายการโปรด"}
+        </button>
+      )}
     </article>
   );
 }

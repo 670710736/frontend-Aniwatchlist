@@ -1,81 +1,197 @@
-
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { addAnimeToWatchlist, getAnimeById, getAnimeReviews, searchAnime } from "../api/backend";
+import { getAnimeById, getAnimeReviews, searchAnime } from "../api/anilist";
+import {
+  addAnimeToFavorites,
+  addAnimeToWatchlist,
+  getAnimeFavoriteStatus,
+  removeAnimeFromFavorites,
+} from "../api/backend";
+import { useAuth } from "../auth/AuthContext";
 
 function AnilistDetail() {
   const { id } = useParams();
+  const { isLoggedIn } = useAuth();
   const [anime, setAnime] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [status, setStatus] = useState("loading");
+  const [error, setError] = useState(null);
   const [added, setAdded] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [favoriteCount, setFavoriteCount] = useState(0);
+  const [favoriteLoading, setFavoriteLoading] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
-    setStatus("loading");
-    const requestedId = decodeURIComponent(id);
-    const animeRequest = /^\d+$/.test(requestedId)
-      ? getAnimeById(requestedId, controller.signal)
-      : searchAnime(requestedId, { perPage: 1, signal: controller.signal }).then((page) => page.media?.[0]);
-    animeRequest
-      .then((animeData) => {
+    let ignore = false;
+
+    async function load() {
+      setStatus("loading");
+      setError(null);
+
+      try {
+        const requestedId = decodeURIComponent(id || "");
+        const animeData = /^\d+$/.test(requestedId)
+          ? await getAnimeById(requestedId, controller.signal)
+          : (await searchAnime(requestedId, { perPage: 1, signal: controller.signal })).media?.[0];
+
         if (!animeData) throw new Error("ไม่พบอนิเมะเรื่องนี้");
-        return getAnimeReviews(animeData.id, controller.signal)
-          .catch((error) => error.name === "AbortError" ? Promise.reject(error) : [])
-          .then((reviewData) => [animeData, reviewData]);
-      })
-      .then(([animeData, reviewData]) => {
-        setAnime(animeData);
-        setReviews(reviewData);
-        setStatus("ready");
-      })
-      .catch((error) => {
-        if (error.name !== "AbortError") setStatus("error");
-      });
-    return () => controller.abort();
-  }, [id]);
+
+        const [reviewData, favoriteData] = await Promise.all([
+          getAnimeReviews(animeData.id, controller.signal).catch((requestError) => {
+            if (requestError.name === "AbortError") throw requestError;
+            return [];
+          }),
+          getAnimeFavoriteStatus(animeData.id, controller.signal).catch((requestError) => {
+            if (requestError.name === "AbortError") throw requestError;
+            return { count: 0, favorited: false };
+          }),
+        ]);
+
+        if (!ignore) {
+          setAnime(animeData);
+          setReviews(reviewData);
+          setFavoriteCount(Number(favoriteData.count || 0));
+          setIsFavorite(isLoggedIn && Boolean(favoriteData.favorited));
+          setStatus("success");
+        }
+      } catch (requestError) {
+        if (!ignore && requestError.name !== "AbortError") {
+          setError(requestError);
+          setStatus("error");
+        }
+      }
+    }
+
+    load();
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
+  }, [id, isLoggedIn]);
 
   async function handleWatchlist(statusValue) {
     try {
       setActionError("");
       await addAnimeToWatchlist(anime.id, statusValue);
       setAdded(true);
-    } catch (error) {
-      setActionError(error.message || "เพิ่มรายการไม่สำเร็จ");
+    } catch (requestError) {
+      setActionError(requestError.message || "เพิ่มรายการไม่สำเร็จ");
     }
   }
 
-  if (status === "loading") return <main className="min-h-screen bg-[#080a16] p-10 text-center text-slate-400">กำลังโหลดข้อมูลอนิเมะ...</main>;
-  if (status === "error" || !anime) return <main className="min-h-screen bg-[#080a16] p-10 text-center text-red-300"><p>ไม่สามารถโหลดข้อมูลอนิเมะได้</p><Link to="/" className="mt-4 inline-block text-sm text-slate-400 hover:text-white">กลับหน้าแรก</Link></main>;
+  async function handleFavorite() {
+    if (!isLoggedIn) return;
+
+    try {
+      setFavoriteLoading(true);
+      setActionError("");
+      if (isFavorite) {
+        await removeAnimeFromFavorites(anime.id);
+        setIsFavorite(false);
+        setFavoriteCount((count) => Math.max(0, count - 1));
+      } else {
+        await addAnimeToFavorites(anime.id);
+        setIsFavorite(true);
+        setFavoriteCount((count) => count + 1);
+      }
+    } catch (requestError) {
+      setActionError(requestError.message || "เปลี่ยนรายการโปรดไม่สำเร็จ");
+    } finally {
+      setFavoriteLoading(false);
+    }
+  }
+
+  if (status === "loading") {
+    return (
+      <main className="mx-auto max-w-5xl animate-pulse px-4 py-10 md:px-6">
+        <div className="mb-6 h-4 w-40 rounded bg-[#171a31]" />
+        <div className="flex flex-col gap-8 md:flex-row">
+          <div className="aspect-[2/3] w-48 shrink-0 rounded-xl bg-[#171a31]" />
+          <div className="flex-1 space-y-4">
+            <div className="h-9 w-2/3 rounded bg-[#171a31]" />
+            <div className="h-4 w-1/3 rounded bg-[#171a31]" />
+            <div className="h-5 w-1/2 rounded bg-[#171a31]" />
+            <div className="h-28 w-full rounded bg-[#171a31]" />
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (status === "error" || !anime) {
+    return (
+      <main className="mx-auto max-w-xl px-4 py-20 text-center">
+        <p className="text-lg text-slate-200">ไม่พบอนิเมะเรื่องนี้ 😢</p>
+        <p className="mt-2 text-sm text-slate-400">{error?.message || "ไม่สามารถโหลดข้อมูลได้"}</p>
+        <Link to="/anime" className="mt-6 inline-block text-sm text-slate-400 underline hover:text-white">
+          กลับไปหน้าอนิเมะทั้งหมด
+        </Link>
+      </main>
+    );
+  }
 
   const title = anime.title?.userPreferred || anime.title?.english || anime.title?.romaji || "Untitled anime";
   const description = anime.description?.replace(/<[^>]+>/g, " ") || "ยังไม่มีเรื่องย่อของอนิเมะเรื่องนี้";
   const score = anime.averageScore ? (anime.averageScore / 10).toFixed(1) : "-";
+  const poster = anime.coverImage?.extraLarge || anime.coverImage?.large;
 
   return (
-    <main className="min-h-screen bg-[#080a16] text-white">
-      <section className="relative isolate overflow-hidden border-b border-white/10">
-        <div className="absolute inset-0 -z-20 bg-cover bg-center opacity-30 blur-sm" style={{ backgroundImage: `url(${anime.bannerImage || anime.coverImage?.large})` }} />
-        <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[#080a16] via-[#080a16]/95 to-[#080a16]/70" />
-        <div className="mx-auto max-w-6xl px-6 py-6 lg:px-10"><Link to="/" className="text-sm text-slate-400 transition hover:text-white">← กลับหน้าหลัก</Link></div>
-        <div className="mx-auto flex max-w-6xl flex-col gap-8 px-6 pb-16 pt-8 md:flex-row md:items-center lg:px-10">
-          <img src={anime.coverImage?.extraLarge || anime.coverImage?.large} alt={title} className="w-48 rounded-2xl shadow-2xl shadow-black/60 md:w-64" />
-          <div className="max-w-3xl">
-            <div className="mb-4 flex flex-wrap gap-2">{anime.genres?.map((genre) => <span key={genre} className="rounded-full border border-red-400/40 px-3 py-1 text-xs text-red-300">{genre}</span>)}</div>
-            <h1 className="text-4xl font-black tracking-tight sm:text-6xl">{title}</h1>
-            {anime.title?.native && <p className="mt-2 text-slate-400">{anime.title.native}</p>}
-            <div className="mt-6 flex flex-wrap gap-5 text-sm text-slate-300"><span className="text-amber-300">★ {score} / 10</span><span>{anime.episodes || "ไม่ระบุ"} ตอน</span><span>{anime.format || "ANIME"}</span><span>{anime.status || "ไม่ระบุ"}</span></div>
-            <button type="button" onClick={() => handleWatchlist("planned")} className="mt-8 rounded-xl bg-red-500 px-5 py-3 font-bold transition hover:bg-red-400">{added ? "เพิ่มในรายการอยากดูแล้ว ✓" : "เพิ่มลงรายการอยากดู +"}</button>
-            {actionError && <p className="mt-3 text-sm text-red-300">{actionError}</p>}
-          </div>
-        </div>
-      </section>
+    <main className="mx-auto max-w-5xl px-4 py-10 md:px-6">
+      <Link to="/anime" className="text-sm text-slate-400 hover:text-white">
+        ← กลับไปหน้าอนิเมะทั้งหมด
+      </Link>
 
-      <section className="mx-auto grid max-w-6xl gap-12 px-6 py-14 lg:grid-cols-[1.25fr_1fr] lg:px-10">
-        <article><h2 className="text-2xl font-bold">เรื่องย่อ</h2><p className="mt-4 whitespace-pre-line leading-8 text-slate-300">{description}</p></article>
-        <article><div className="flex items-center justify-between"><h2 className="text-2xl font-bold">รีวิวจากผู้ชม</h2><span className="text-sm text-slate-500">{reviews.length} รีวิว</span></div><div className="mt-4 space-y-4">{reviews.length ? reviews.map((review) => <div key={review.id} className="rounded-xl border border-white/10 bg-white/5 p-4"><div className="flex justify-between gap-3 text-sm"><strong>{review.user?.name || "ผู้ชม AniList"}</strong><span className="text-amber-300">★ {review.score || review.rating || 0}</span></div><p className="mt-2 text-sm leading-6 text-slate-400">{review.body || review.text || review.summary}</p></div>) : <p className="text-slate-500">ยังไม่มีรีวิวสำหรับเรื่องนี้</p>}</div></article>
+      <div className="mt-5 flex flex-col gap-8 md:flex-row">
+        {poster ? (
+          <img src={poster} alt={`โปสเตอร์ ${title}`} className="w-48 shrink-0 self-start rounded-xl border border-white/10" />
+        ) : (
+          <div className="grid aspect-[2/3] w-48 shrink-0 place-items-center rounded-xl bg-[#171a31] text-5xl">🎬</div>
+        )}
+
+        <div className="flex-1">
+          <h1 className="text-3xl font-semibold text-white md:text-4xl">{title}</h1>
+          {anime.title?.native && <p className="mt-1 text-slate-400">{anime.title.native}</p>}
+          <p className="mt-3 text-sm text-slate-400">
+            ⭐ {score} / 10{anime.genres?.length ? ` | ${anime.genres.join(" · ")}` : ""}
+            {anime.episodes ? ` | ${anime.episodes} ตอน` : ""}
+          </p>
+
+          <p className="mt-5 whitespace-pre-line leading-relaxed text-slate-300">{description}</p>
+
+          {isLoggedIn && (
+            <div className="mt-7 flex flex-wrap gap-3">
+              <button type="button" onClick={() => handleWatchlist("planned")} className="rounded-lg bg-red-500 px-4 py-2 font-semibold text-white hover:bg-red-400">
+                {added ? "เพิ่มในรายการอยากดูแล้ว ✓" : "เพิ่มลงรายการอยากดู +"}
+              </button>
+              <button type="button" onClick={handleFavorite} disabled={favoriteLoading} className={`rounded-lg border px-4 py-2 font-semibold transition disabled:opacity-60 ${isFavorite ? "border-red-400 bg-red-500/20 text-red-200" : "border-white/20 bg-white/5 text-white hover:border-red-400"}`}>
+                {favoriteLoading ? "กำลังบันทึก..." : isFavorite ? "♥ นำออกจากรายการโปรด" : "♡ เพิ่มในรายการโปรด"}
+              </button>
+            </div>
+          )}
+          <p className="mt-3 text-sm text-slate-400">♥ มีคนกด favorite แล้ว {favoriteCount} คน</p>
+          {actionError && <p className="mt-2 text-sm text-red-300">{actionError}</p>}
+        </div>
+      </div>
+
+      <section className="mt-12 border-t border-white/10 pt-8">
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="text-2xl font-bold text-white">รีวิวจากผู้ชม</h2>
+          <span className="text-sm text-slate-500">{reviews.length} รีวิว</span>
+        </div>
+        <div className="mt-4 space-y-4">
+          {reviews.length ? reviews.map((review) => (
+            <article key={review.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
+              <div className="flex justify-between gap-3 text-sm text-white">
+                <strong>{review.user?.name || "ผู้ชม AniList"}</strong>
+                <span className="text-amber-300">★ {review.score || review.rating || 0}</span>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-slate-400">{review.body || review.text || review.summary}</p>
+            </article>
+          )) : <p className="text-slate-500">ยังไม่มีรีวิวสำหรับเรื่องนี้</p>}
+        </div>
       </section>
     </main>
   );

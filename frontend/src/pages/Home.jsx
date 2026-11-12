@@ -1,7 +1,7 @@
 
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getTrendingAnime, searchAnime } from "../api/backend";
+import { getMovies, searchAnime } from "../api/anilist";
 import AnilistCard from "../components/AnilistCard";
 
 const featuredAnime = [
@@ -9,31 +9,26 @@ const featuredAnime = [
   { id: "21", title: "One Piece", subtitle: "การเดินทางของโจรสลัดหมวกฟาง", description: "ออกเดินทางไปพร้อมกับลูฟี่และพรรคพวกบนเส้นทางสู่สมบัติ One Piece", image: "https://s4.anilist.co/file/anilistcdn/media/anime/banner/21-qfC2x3GQZQ2t.jpg" },
 ];
 
-const popularAnime = [
-  { id: "16498", title: "Attack on Titan", meta: "Action · Drama", image: "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx16498-7gWfD3M9Q9mF.jpg" },
-  { id: "113415", title: "Jujutsu Kaisen", meta: "Action · Supernatural", image: "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx113415-3wM8L8zY0xY5.jpg" },
-  { id: "21087", title: "One Punch Man", meta: "Action · Comedy", image: "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21087-7V7b7eK8z8wS.jpg" },
-  { id: "20605", title: "Tokyo Ghoul", meta: "Action · Horror", image: "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx20605-Q6n5s6H4v4Jx.jpg" },
-];
+function shuffle(items) {
+  return [...items].sort(() => Math.random() - 0.5);
+}
 
 function Home() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [activeHero, setActiveHero] = useState(0);
-  const [liveAnime, setLiveAnime] = useState([]);
+  const [picks, setPicks] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
   const hero = featuredAnime[activeHero];
 
   useEffect(() => {
-    const controller = new AbortController();
-    getTrendingAnime({ perPage: 8, signal: controller.signal })
-      .then((page) => setLiveAnime(page.media || []))
-      .catch((error) => {
-        if (error.name !== "AbortError") console.error("AniList request failed:", error);
-      });
-    return () => controller.abort();
+    let ignore = false;
+    getMovies()
+      .then((list) => { if (!ignore) setPicks(shuffle(list)); })
+      .catch(() => { if (!ignore) setPicks([]); });
+    return () => { ignore = true; };
   }, []);
 
   useEffect(() => {
@@ -90,7 +85,7 @@ function Home() {
     }
   }
 
-  const displayedAnime = liveAnime.length ? liveAnime : popularAnime;
+  const displayedAnime = picks;
 
   return (
     <main className="min-h-screen overflow-hidden bg-[#080a16] text-white">

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import AnilistCard from "../components/AnilistCard";
-import { getPopularAnime } from "../api/backend";
+import { getPopularAnime } from "../api/anilist";
 
 function PopularAnime() {
   const [items, setItems] = useState([]);

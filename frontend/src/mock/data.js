@@ -59,16 +59,10 @@ export function createSeedData() {
     { id: 4, email: "demo@moviehub.test", displayName: "MovieHub Demo", role: "member", passwordDigest: demoPasswordDigest },
   ];
 
-  const reviews = anime.slice(0, 6).flatMap((item, index) => [
-    { id: index * 2 + 1, animeId: item.id, memberId: 1, rating: 5, text: "ดูสนุกมาก เนื้อเรื่องน่าติดตามและงานภาพดี", createdAt: "2026-11-11T08:00:00Z" },
-    { id: index * 2 + 2, animeId: item.id, memberId: 3, rating: index % 2 ? 4 : 5, text: "เป็นเรื่องที่อยากแนะนำให้ลองดู", createdAt: "2026-11-11T10:30:00Z" },
-  ]);
-
   return {
     version: 1,
     anime,
     members,
-    reviews,
     favorites: [
       { memberId: 1, animeId: 16498 },
       { memberId: 1, animeId: 154587 },
@@ -79,6 +73,5 @@ export function createSeedData() {
     ],
     sessions: {},
     nextMemberId: 5,
-    nextReviewId: reviews.length + 1,
   };
 }

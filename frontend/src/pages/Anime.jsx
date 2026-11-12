@@ -1,51 +1,94 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import AnilistCard from "../components/AnilistCard";
-import { getPopularAnime } from "../api/backend";
+import AniGrid from "../components/AniGrid";
+import { CACHE_KEY, getMovies } from "../api/anilist";
+import { forget } from "../api/cache";
+
+function animeTitle(anime) {
+  return anime.title?.userPreferred || anime.title?.english || anime.title?.romaji || "";
+}
 
 function Anime() {
-  const [items, setItems] = useState([]);
-  const [allAnime, setAllAnime] = useState([]);
-  const [categories, setCategories] = useState(["All"]);
-  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [query, setQuery] = useState("");
+  const [genre, setGenre] = useState("all");
+  const [anime, setAnime] = useState([]);
   const [status, setStatus] = useState("loading");
+  const [error, setError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    const controller = new AbortController();
-    getPopularAnime({ total: 100, signal: controller.signal })
-      .then((result) => {
-        const animeItems = result.items || [];
-        const animeCategories = [...new Set(animeItems.flatMap((anime) => anime.genres || []))].sort();
-        setAllAnime(animeItems);
-        setItems(animeItems);
-        setCategories(["All", ...animeCategories]);
-        setStatus("ready");
-      })
-      .catch((error) => {
-        if (error.name !== "AbortError") setStatus("error");
-      });
-    return () => controller.abort();
-  }, []);
+    let ignore = false;
 
-  function handleCategory(category) {
-    setSelectedCategory(category);
-    const filteredAnime = category === "All"
-      ? allAnime
-      : allAnime.filter((anime) => anime.genres?.includes(category));
-    setItems(filteredAnime);
-    setStatus("ready");
+    async function load() {
+      setStatus("loading");
+      setError(null);
+      try {
+        const items = await getMovies();
+        if (!ignore) {
+          setAnime(items);
+          setStatus("success");
+        }
+      } catch (requestError) {
+        if (!ignore) {
+          setError(requestError);
+          setStatus("error");
+        }
+      }
+    }
+
+    load();
+    return () => { ignore = true; };
+  }, [reloadKey]);
+
+  const genres = useMemo(
+    () => [...new Set(anime.flatMap((item) => item.genres || []))].sort(),
+    [anime]
+  );
+
+  const shown = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return anime.filter((item) => {
+      const title = animeTitle(item).toLowerCase();
+      const nativeTitle = (item.title?.native || "").toLowerCase();
+      return (genre === "all" || item.genres?.includes(genre))
+        && (!normalizedQuery || title.includes(normalizedQuery) || nativeTitle.includes(normalizedQuery));
+    });
+  }, [anime, genre, query]);
+
+  const chipClass = (active) => `rounded-full border px-3 py-1 text-sm transition ${active
+    ? "border-red-400 bg-red-500 text-white"
+    : "border-white/15 bg-white/5 text-slate-300 hover:border-red-400 hover:bg-red-500/10"}`;
+
+  function retry() {
+    forget(`${CACHE_KEY}.100`);
+    setReloadKey((key) => key + 1);
   }
 
   return (
     <main className="min-h-screen bg-[#080a16] px-6 py-12 text-white lg:px-10">
       <div className="mx-auto max-w-7xl">
-        <Link to="/" className="text-sm text-slate-400 hover:text-white">← กลับหน้าหลัก</Link>
-        <div className="mb-8 mt-8"><p className="text-xs font-bold tracking-[0.25em] text-red-400">FIND YOUR NEXT FAVORITE</p><h1 className="mt-2 text-4xl font-black">ค้นหาอนิเมะตามหมวดหมู่</h1><p className="mt-3 text-slate-400">เลือก categories เพื่อค้นหาเรื่องที่ตรงกับความชอบของคุณ</p></div>
-        <div className="mb-10 flex flex-wrap gap-3">{categories.map((category) => <button key={category} type="button" onClick={() => handleCategory(category)} className={`rounded-full border px-4 py-2 text-sm transition ${selectedCategory === category ? "border-red-400 bg-red-500 text-white" : "border-white/15 text-slate-300 hover:border-red-400 hover:bg-red-500/10 hover:text-white"}`}>{category}</button>)}</div>
-        <div className="mb-6 flex items-center justify-between"><h2 className="text-2xl font-bold">{selectedCategory === "All" ? "อนิเมะยอดนิยม 100 เรื่อง" : selectedCategory}</h2><span className="text-sm text-slate-500">{items.length} เรื่อง</span></div>
-        {status === "loading" && <p className="py-20 text-center text-slate-400">กำลังโหลดข้อมูลอนิเมะ...</p>}
-        {status === "error" && <p className="py-20 text-center text-red-300">ไม่สามารถโหลดข้อมูลจาก AniList ได้</p>}
-        {status === "ready" && <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">{items.map((anime) => <AnilistCard anime={anime} key={anime.id} />)}</div>}
+        <Link to="/" className="text-sm text-slate-400 transition hover:text-white">← กลับหน้าหลัก</Link>
+        <div className="mb-4 mt-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 className="text-4xl font-black">อนิเมะทั้งหมด</h1>
+            <p className="mt-3 text-sm text-slate-400">
+              แหล่งข้อมูล: AniList (โหลดวันละครั้ง) {status === "success" && `| พบ ${shown.length} จาก ${anime.length} เรื่อง`}
+            </p>
+          </div>
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="พิมพ์ชื่ออนิเมะเพื่อกรอง..."
+            className="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500 focus:border-red-400 md:w-72"
+          />
+        </div>
+
+        <div className="mb-6 flex flex-wrap gap-2">
+          <button type="button" onClick={() => setGenre("all")} className={chipClass(genre === "all")}>ทุกแนว</button>
+          {genres.map((item) => <button key={item} type="button" onClick={() => setGenre(item)} className={chipClass(genre === item)}>{item}</button>)}
+        </div>
+
+        <AniGrid anime={shown} status={status} error={error} onRetry={retry} />
       </div>
     </main>
   );

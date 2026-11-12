@@ -212,3 +212,20 @@ export async function getAnimeReviews(id, signal) {
 export function addAnimeToWatchlist(animeId, status = "planned") {
   return request("/api/watchlist", { method: "POST", body: { animeId: Number(animeId), status } });
 }
+
+export async function getFavorites(signal) {
+  const result = await request("/api/favorites", { signal });
+  return result.items || [];
+}
+
+export function addAnimeToFavorites(animeId) {
+  return request("/api/favorites", { method: "POST", body: { animeId: Number(animeId) } });
+}
+
+export function removeAnimeFromFavorites(animeId) {
+  return request(`/api/favorites/${encodeURIComponent(animeId)}`, { method: "DELETE" });
+}
+
+export async function getAnimeFavoriteStatus(animeId, signal) {
+  return request(`/api/favorites?animeId=${encodeURIComponent(animeId)}`, { signal });
+}

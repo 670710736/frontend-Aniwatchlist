@@ -12,7 +12,9 @@ function findAnime(id) {
 }
 
 function currentMemberId(options) {
-  return Number(options.memberId || options.userId || 1);
+  const authorization = options.headers?.Authorization || options.headers?.authorization || "";
+  const tokenMemberId = authorization.match(/^Bearer mock-token-(\d+)$/)?.[1];
+  return Number(options.memberId || options.userId || tokenMemberId || 1);
 }
 
 function parseBody(options) {
@@ -81,6 +83,15 @@ export async function mockRequest(path, options = {}) {
 
   if (method === "GET" && parts[0] === "api" && parts[1] === "favorites") {
     const memberId = currentMemberId(options);
+    const animeId = url.searchParams.get("animeId");
+    if (animeId) {
+      const numericAnimeId = Number(animeId);
+      return json({
+        animeId: numericAnimeId,
+        count: database.favorites.filter((item) => item.animeId === numericAnimeId).length,
+        favorited: database.favorites.some((item) => item.memberId === memberId && item.animeId === numericAnimeId),
+      });
+    }
     const items = database.favorites.filter((entry) => entry.memberId === memberId).map((entry) => findAnime(entry.animeId)).filter(Boolean);
     return json({ items });
   }
@@ -93,6 +104,13 @@ export async function mockRequest(path, options = {}) {
       database.favorites.push({ memberId, animeId });
     }
     return json({ animeId, memberId, favorite: true }, 201);
+  }
+
+  if (method === "DELETE" && parts[0] === "api" && parts[1] === "favorites" && parts[2]) {
+    const memberId = currentMemberId(options);
+    const animeId = Number(parts[2]);
+    database.favorites = database.favorites.filter((item) => !(item.memberId === memberId && item.animeId === animeId));
+    return json({ animeId, memberId, favorite: false });
   }
 
   if (method === "POST" && parts[0] === "api" && parts[1] === "auth" && parts[2] === "register") {
