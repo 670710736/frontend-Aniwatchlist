@@ -9,6 +9,7 @@ import Register from "./pages/Register";
 import AnilistDetail from "./pages/AnilistDetail";
 import Favorites from "./pages/Favorites";
 import Profile from "./pages/Profile";
+import NotFound from "./pages/NotFound";
 import Footer from "./components/Footer";
 
 function App() {
@@ -24,6 +25,7 @@ function App() {
         <Route path="/anilist/:id" element={<AnilistDetail />} />
         <Route path="/favorites" element={<Favorites />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
       <Footer /> 
       </div>
