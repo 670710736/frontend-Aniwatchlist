@@ -2,6 +2,7 @@ import { createContext, useContext, useMemo, useState } from "react";
 
 const AuthContext = createContext(null);
 const STORAGE_KEY = "anilist.token";
+const USER_STORAGE_KEY = "anilist.user";
 
 function readToken() {
   try {
@@ -11,15 +12,25 @@ function readToken() {
   }
 }
 
+function readUser() {
+  try {
+    const storedUser = localStorage.getItem(USER_STORAGE_KEY);
+    return storedUser ? JSON.parse(storedUser) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(readToken);
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(readUser);
 
   function login(nextToken, nextUser = null) {
     setToken(nextToken);
     setUser(nextUser);
     try {
       localStorage.setItem(STORAGE_KEY, nextToken);
+      if (nextUser) localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(nextUser));
     } catch {
       // Keep the session in memory when storage is unavailable.
     }
@@ -30,6 +41,7 @@ export function AuthProvider({ children }) {
     setUser(null);
     try {
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(USER_STORAGE_KEY);
     } catch {
       // Ignore storage errors.
     }

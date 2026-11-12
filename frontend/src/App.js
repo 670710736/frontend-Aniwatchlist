@@ -5,6 +5,7 @@ import Navbar from "./components/Navbar";
 
 import Home from "./pages/Home";
 import Login from "./pages/Login";
+import Logout from "./pages/Logout";
 import Register from "./pages/Register";
 import AnilistDetail from "./pages/AnilistDetail";
 import Favorites from "./pages/Favorites";
@@ -25,6 +26,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/logout" element={<Logout />} />
             <Route path="/register" element={<Register />} />
             <Route path="/anilist/:id" element={<AnilistDetail />} />
             <Route path="/popular" element={<PopularAnime />} />

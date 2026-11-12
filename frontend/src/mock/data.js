@@ -51,10 +51,12 @@ export function mockPasswordDigest(password) {
 
 export function createSeedData() {
   const passwordDigest = mockPasswordDigest("ExamplePassword123");
+  const demoPasswordDigest = mockPasswordDigest("1234");
   const members = [
     { id: 1, email: "demo@example.com", displayName: "นักดูอนิเมะตัวอย่าง", role: "member", passwordDigest },
     { id: 2, email: "admin@example.com", displayName: "ผู้ดูแลระบบ", role: "admin", passwordDigest },
     { id: 3, email: "otaku@example.com", displayName: "นักสะสมอนิเมะ", role: "member", passwordDigest },
+    { id: 4, email: "demo@moviehub.test", displayName: "MovieHub Demo", role: "member", passwordDigest: demoPasswordDigest },
   ];
 
   const reviews = anime.slice(0, 6).flatMap((item, index) => [
@@ -76,7 +78,7 @@ export function createSeedData() {
       { memberId: 1, animeId: 113415, status: "completed", progress: 24 },
     ],
     sessions: {},
-    nextMemberId: 4,
+    nextMemberId: 5,
     nextReviewId: reviews.length + 1,
   };
 }

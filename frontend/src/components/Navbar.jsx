@@ -1,7 +1,10 @@
 
 import { Link } from "react-router-dom";
+import { useAuth } from "../auth/AuthContext";
 
 function Navbar() {
+  const { isLoggedIn } = useAuth();
+
   return (
     <nav className="bg-gray-950 text-white px-8 py-4 flex justify-between items-center">
 
@@ -19,13 +22,20 @@ function Navbar() {
           Favorites
         </Link>
 
-        <Link to="/login" className="hover:text-red-400">
-          Login
-        </Link>
-
-        <Link to="/register" className="hover:text-red-400">
-          Register
-        </Link>
+        {isLoggedIn ? (
+          <>
+            <Link to="/profile" className="hover:text-red-400">
+              Profile
+            </Link>
+            <Link to="/logout" className="hover:text-red-400">
+              Logout
+            </Link>
+          </>
+        ) : (
+          <Link to="/login" className="hover:text-red-400">
+            Login
+          </Link>
+        )}
 
       </div>
     </nav>

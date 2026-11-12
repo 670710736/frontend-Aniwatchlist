@@ -95,6 +95,33 @@ export async function mockRequest(path, options = {}) {
     return json({ animeId, memberId, favorite: true }, 201);
   }
 
+  if (method === "POST" && parts[0] === "api" && parts[1] === "auth" && parts[2] === "register") {
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "");
+
+    if (!email || password.length < 4) {
+      return json({ message: "กรุณากรอกอีเมลและรหัสผ่านอย่างน้อย 4 ตัวอักษร" }, 400);
+    }
+
+    if (database.members.some((item) => item.email.toLowerCase() === email)) {
+      return json({ message: "อีเมลนี้ถูกใช้งานแล้ว" }, 409);
+    }
+
+    const member = {
+      id: database.nextMemberId++,
+      email,
+      displayName: email.split("@")[0],
+      role: "member",
+      passwordDigest: mockPasswordDigest(password),
+    };
+    database.members.push(member);
+
+    return json({
+      user: { id: member.id, email: member.email, displayName: member.displayName, role: member.role },
+      token: `mock-token-${member.id}`,
+    }, 201);
+  }
+
   if (method === "POST" && parts[0] === "api" && parts[1] === "auth" && parts[2] === "login") {
     const member = database.members.find((item) => item.email === body.email && item.passwordDigest === mockPasswordDigest(body.password));
     return member ? json({ user: { id: member.id, email: member.email, displayName: member.displayName, role: member.role }, token: `mock-token-${member.id}` }) : json({ message: "อีเมลหรือรหัสผ่านไม่ถูกต้อง" }, 401);
