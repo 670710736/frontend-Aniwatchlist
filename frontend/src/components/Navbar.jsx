@@ -6,7 +6,7 @@ function Navbar() {
     <nav className="bg-gray-950 text-white px-8 py-4 flex justify-between items-center">
 
       <Link to="/" className="text-2xl font-bold text-red-500">
-        Anilist
+        AnimeWatchlist
       </Link>
 
       <div className="flex gap-6">

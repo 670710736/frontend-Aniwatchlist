@@ -1,12 +1,10 @@
 
 function Footer() {
   return (
-    <footer className="bg-[#17192f] text-slate-400 text-center p-6 mt-10">
+    <footer className="border-t border-white/10 bg-[#080a16] px-6 py-8 text-center text-slate-400">
       <p>© 2026 AniList Watchlist</p>
-      <p className="text-sm mt-2">
-        Discover. Track. Enjoy your anime journey.
-        <p>AniList โปรเจกต์ประกอบวิชา 520 341 คณะวิทยาศาสตร์ มหาวิทยาลัยศิลปากร</p>
-      </p>
+      <p className="mt-2 text-sm">Discover. Track. Enjoy your anime journey.</p>
+      <p className="mt-1 text-xs text-slate-500">AniWatchList โปรเจกต์ประกอบวิชา 520 341 คณะวิทยาศาสตร์ มหาวิทยาลัยศิลปากร</p>
     </footer>
   );
 }
