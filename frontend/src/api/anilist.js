@@ -114,17 +114,6 @@ export async function getAnime(id, signal) {
 
 export const getAnimeById = getAnime;
 
-export async function getAnimeReviews(id, signal) {
-  const data = await getJSON(`query AnimeReviews($id: Int) {
-    Media(id: $id, type: ANIME) {
-      reviews(sort: RATING_DESC, perPage: 5) {
-        nodes { id summary body score user { name } }
-      }
-    }
-  }`, { id: Number(id) }, signal);
-  return data.Media?.reviews?.nodes || [];
-}
-
 export function forgetMovies() {
   return localStorage.removeItem(`${CACHE_KEY}.100`);
 }

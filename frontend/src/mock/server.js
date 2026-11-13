@@ -64,6 +64,43 @@ export async function mockRequest(path, options = {}) {
     return json({ items: genres });
   }
 
+  if (parts[0] === "api" && parts[1] === "reviews") {
+    const animeId = Number(url.searchParams.get("animeId") || body.animeId);
+    if (!Number.isInteger(animeId) || animeId <= 0) {
+      return json({ message: "รหัสอนิเมะไม่ถูกต้อง" }, 400);
+    }
+
+    if (method === "GET") {
+      const items = database.reviews
+        .filter((review) => review.animeId === animeId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return json({ items });
+    }
+
+    if (method === "POST") {
+      const memberId = currentMemberId(options);
+      const member = database.members.find((item) => item.id === memberId);
+      const text = String(body.text || "").trim();
+      const rating = Number(body.rating);
+      if (!member) return json({ message: "กรุณาเข้าสู่ระบบก่อนโพสต์รีวิว" }, 401);
+      if (!text) return json({ message: "กรุณาเขียนรีวิวก่อนโพสต์" }, 400);
+      if (!Number.isInteger(rating) || rating < 1 || rating > 10) {
+        return json({ message: "คะแนนรีวิวต้องอยู่ระหว่าง 1 ถึง 10" }, 400);
+      }
+
+      const review = {
+        id: database.nextReviewId++,
+        animeId,
+        rating,
+        text,
+        user: { id: member.id, name: member.displayName },
+        createdAt: new Date().toISOString(),
+      };
+      database.reviews.push(review);
+      return json(review, 201);
+    }
+  }
+
   if (method === "GET" && parts[0] === "api" && parts[1] === "watchlist") {
     const memberId = currentMemberId(options);
     const items = database.watchlist

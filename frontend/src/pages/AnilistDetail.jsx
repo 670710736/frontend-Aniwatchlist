@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { getAnimeById, getAnimeReviews, searchAnime } from "../api/anilist";
+import { getAnimeById, searchAnime } from "../api/anilist";
 import {
   addAnimeToFavorites,
   addAnimeToWatchlist,
   getAnimeFavoriteStatus,
   removeAnimeFromFavorites,
+  getAnimeReviews,
+  postAnimeReview,
 } from "../api/backend";
 import { useAuth } from "../auth/AuthContext";
 
@@ -22,6 +24,10 @@ function AnilistDetail() {
   const [isFavorite, setIsFavorite] = useState(false);
   const [favoriteCount, setFavoriteCount] = useState(0);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
+  const [reviewRating, setReviewRating] = useState("10");
+  const [reviewText, setReviewText] = useState("");
+  const [reviewError, setReviewError] = useState("");
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -101,6 +107,22 @@ function AnilistDetail() {
       setActionError(requestError.message || "เปลี่ยนรายการโปรดไม่สำเร็จ");
     } finally {
       setFavoriteLoading(false);
+    }
+  }
+
+  async function handleReviewSubmit(event) {
+    event.preventDefault();
+    setReviewError("");
+    setReviewSubmitting(true);
+    try {
+      const review = await postAnimeReview(anime.id, { rating: reviewRating, text: reviewText });
+      setReviews((current) => [review, ...current]);
+      setReviewText("");
+      setReviewRating("10");
+    } catch (requestError) {
+      setReviewError(requestError.message || "โพสต์รีวิวไม่สำเร็จ");
+    } finally {
+      setReviewSubmitting(false);
     }
   }
 
@@ -188,10 +210,31 @@ function AnilistDetail() {
                 <strong>{review.user?.name || "ผู้ชม AniList"}</strong>
                 <span className="text-amber-300">★ {review.score || review.rating || 0}</span>
               </div>
-              <p className="mt-2 text-sm leading-6 text-slate-400">{review.body || review.text || review.summary}</p>
+              <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-400">{review.body || review.text || review.summary}</p>
             </article>
           )) : <p className="text-slate-500">ยังไม่มีรีวิวสำหรับเรื่องนี้</p>}
         </div>
+        {isLoggedIn ? (
+          <form onSubmit={handleReviewSubmit} className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4">
+            <h3 className="font-semibold text-white">เขียนรีวิวของคุณ</h3>
+            <label className="mt-4 block text-sm text-slate-300">
+              คะแนน (1–10)
+              <select value={reviewRating} onChange={(event) => setReviewRating(event.target.value)} className="ml-3 rounded-lg border border-white/10 bg-[#171a31] px-3 py-2 text-white">
+                {Array.from({ length: 10 }, (_, index) => 10 - index).map((rating) => <option key={rating} value={rating}>{rating}</option>)}
+              </select>
+            </label>
+            <label className="mt-4 block text-sm text-slate-300">
+              รีวิว
+              <textarea required maxLength={2000} value={reviewText} onChange={(event) => setReviewText(event.target.value)} rows={4} placeholder="แบ่งปันความเห็นเกี่ยวกับอนิเมะเรื่องนี้" className="mt-2 w-full rounded-lg border border-white/10 bg-[#080a16] p-3 text-white placeholder:text-slate-500" />
+            </label>
+            {reviewError && <p role="alert" className="mt-2 text-sm text-red-300">{reviewError}</p>}
+            <button type="submit" disabled={reviewSubmitting || !reviewText.trim()} className="mt-3 rounded-lg bg-red-500 px-4 py-2 font-semibold text-white hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-60">
+              {reviewSubmitting ? "กำลังโพสต์..." : "โพสต์รีวิว"}
+            </button>
+          </form>
+        ) : (
+          <p className="mt-6 text-sm text-slate-400">เข้าสู่ระบบเพื่อเขียนรีวิว</p>
+        )}
       </section>
     </main>
   );

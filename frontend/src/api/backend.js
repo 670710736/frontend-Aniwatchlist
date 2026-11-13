@@ -194,19 +194,8 @@ export async function getAnimeById(id, signal) {
 }
 
 export async function getAnimeReviews(id, signal) {
-  if (isMockMode) {
-    const result = await request(`/api/reviews?animeId=${encodeURIComponent(id)}`, { signal });
-    return result.items || [];
-  }
-
-  const data = await aniListRequest(`query AnimeReviews($id: Int) {
-    Media(id: $id, type: ANIME) {
-      reviews(sort: RATING_DESC, perPage: 5) {
-        nodes { id summary body score user { name } }
-      }
-    }
-  }`, { id: Number(id) }, signal);
-  return data.Media?.reviews?.nodes || [];
+  const result = await request(`/api/reviews?animeId=${encodeURIComponent(id)}`, { signal });
+  return result.items || [];
 }
 
 export function addAnimeToWatchlist(animeId, status = "planned") {
@@ -228,4 +217,11 @@ export function removeAnimeFromFavorites(animeId) {
 
 export async function getAnimeFavoriteStatus(animeId, signal) {
   return request(`/api/favorites?animeId=${encodeURIComponent(animeId)}`, { signal });
+}
+
+export function postAnimeReview(animeId, { rating, text }) {
+  return request("/api/reviews", {
+    method: "POST",
+    body: { animeId: Number(animeId), rating: Number(rating), text },
+  });
 }

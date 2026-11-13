@@ -67,6 +67,8 @@ export function createSeedData() {
       { memberId: 1, animeId: 16498 },
       { memberId: 1, animeId: 154587 },
     ],
+    reviews: [],
+    nextReviewId: 1,
     watchlist: [
       { memberId: 1, animeId: 21, status: "watching", progress: 12 },
       { memberId: 1, animeId: 113415, status: "completed", progress: 24 },
