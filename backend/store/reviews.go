@@ -62,6 +62,32 @@ func (s *MemoryStore) ListReviews(ctx context.Context, animeID int64) ([]Review,
 	return items, nil
 }
 
+func (s *MemoryStore) ListMemberReviews(ctx context.Context, memberID int64) ([]Review, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if memberID <= 0 {
+		return nil, ErrInvalidMemberID
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]Review, 0)
+	for _, review := range s.reviews {
+		if review.MemberID != memberID {
+			continue
+		}
+		review.Score = cloneScore(review.Score)
+		items = append(items, review)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if !items[i].CreatedAt.Equal(items[j].CreatedAt) {
+			return items[i].CreatedAt.After(items[j].CreatedAt)
+		}
+		return items[i].ID > items[j].ID
+	})
+	return items, nil
+}
+
 // SaveReview creates or updates a member's review for an anime. Each member
 // may have one review per anime; saving again preserves its ID and creation time.
 func (s *MemoryStore) SaveReview(ctx context.Context, memberID, animeID int64, text string, score *int16) (Review, error) {
@@ -113,6 +139,45 @@ func (s *MemoryStore) SaveReview(ctx context.Context, memberID, animeID int64, t
 	s.nextReviewID++
 	s.reviews[review.ID] = review
 	return review, nil
+}
+
+// DeleteReview removes a review only when it belongs to the requesting member.
+func (s *MemoryStore) DeleteReview(ctx context.Context, memberID, reviewID int64) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if memberID <= 0 {
+		return ErrInvalidMemberID
+	}
+	if reviewID <= 0 {
+		return ErrNotFound
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	review, ok := s.reviews[reviewID]
+	if !ok || review.MemberID != memberID {
+		return ErrNotFound
+	}
+	delete(s.reviews, reviewID)
+	return nil
+}
+
+// DeleteReviewByID removes a review regardless of owner. Call only from an
+// admin-authorized handler.
+func (s *MemoryStore) DeleteReviewByID(ctx context.Context, reviewID int64) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if reviewID <= 0 {
+		return ErrNotFound
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.reviews[reviewID]; !ok {
+		return ErrNotFound
+	}
+	delete(s.reviews, reviewID)
+	return nil
 }
 
 func cloneScore(score *int16) *int16 {

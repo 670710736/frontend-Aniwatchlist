@@ -29,7 +29,13 @@ type AnimeResolver interface {
 type AnimeService interface {
 	AnimeResolver
 	SearchAnime(ctx context.Context, search, genre string) ([]any, error)
-	ListReviews(ctx context.Context, animeID int) ([]any, error)
+}
+
+type reviewStore interface {
+	ListReviews(ctx context.Context, animeID int64) ([]store.Review, error)
+	ListMemberReviews(ctx context.Context, memberID int64) ([]store.Review, error)
+	SaveReview(ctx context.Context, memberID, animeID int64, text string, score *int16) (store.Review, error)
+	DeleteReview(ctx context.Context, memberID, reviewID int64) error
 }
 
 var ErrAnimeNotFound = errors.New("anime not found")
@@ -104,10 +110,6 @@ func (h *Handler) GetAnime(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListReviews(w http.ResponseWriter, r *http.Request) {
-	if h.AnimeService == nil {
-		writeError(w, http.StatusServiceUnavailable, "ANIME_SERVICE_UNAVAILABLE", "ยังไม่ได้ตั้งค่าบริการรีวิวอนิเมะ")
-		return
-	}
 	rawAnimeID := r.PathValue("id")
 	if rawAnimeID == "" {
 		rawAnimeID = r.URL.Query().Get("animeId")
@@ -117,12 +119,124 @@ func (h *Handler) ListReviews(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
-	items, err := h.AnimeService.ListReviews(r.Context(), animeID)
+	reviews, ok := h.Store.(reviewStore)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "REVIEW_STORE_UNAVAILABLE", "ระบบรีวิวยังไม่พร้อมใช้งาน")
+		return
+	}
+	items, err := reviews.ListReviews(r.Context(), int64(animeID))
 	if err != nil {
 		internal(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *Handler) ListMyReviews(w http.ResponseWriter, r *http.Request) {
+	memberID, ok := memberIDFromRequest(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "กรุณาเข้าสู่ระบบ")
+		return
+	}
+	reviews, ok := h.Store.(reviewStore)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "REVIEW_STORE_UNAVAILABLE", "ระบบรีวิวยังไม่พร้อมใช้งาน")
+		return
+	}
+	items, err := reviews.ListMemberReviews(r.Context(), int64(memberID))
+	if err != nil {
+		internal(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *Handler) SaveReview(w http.ResponseWriter, r *http.Request) {
+	memberID, ok := memberIDFromRequest(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "กรุณาเข้าสู่ระบบ")
+		return
+	}
+	var body struct {
+		AnimeID int    `json:"animeId"`
+		Rating  int16  `json:"rating"`
+		Text    string `json:"text"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_JSON", "ข้อมูลคำขอไม่ถูกต้อง")
+		return
+	}
+	if body.AnimeID <= 0 {
+		writeStoreError(w, store.ErrInvalidAnimeID)
+		return
+	}
+	reviews, ok := h.Store.(reviewStore)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "REVIEW_STORE_UNAVAILABLE", "ระบบรีวิวยังไม่พร้อมใช้งาน")
+		return
+	}
+	if h.AnimeService != nil {
+		if _, err := h.AnimeService.GetAnime(r.Context(), body.AnimeID); err != nil {
+			if errors.Is(err, ErrAnimeNotFound) || errors.Is(err, store.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "ANIME_NOT_FOUND", "ไม่พบอนิเมะเรื่องนี้")
+				return
+			}
+			internal(w, err)
+			return
+		}
+	}
+	score := body.Rating
+	item, err := reviews.SaveReview(r.Context(), int64(memberID), int64(body.AnimeID), body.Text, &score)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, item)
+}
+
+func (h *Handler) DeleteReview(w http.ResponseWriter, r *http.Request) {
+	memberID, ok := memberIDFromRequest(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "กรุณาเข้าสู่ระบบ")
+		return
+	}
+	reviewID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || reviewID <= 0 {
+		writeError(w, http.StatusBadRequest, "INVALID_REVIEW_ID", "รหัสรีวิวไม่ถูกต้อง")
+		return
+	}
+	reviews, ok := h.Store.(reviewStore)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "REVIEW_STORE_UNAVAILABLE", "ระบบรีวิวยังไม่พร้อมใช้งาน")
+		return
+	}
+	if err := reviews.DeleteReview(r.Context(), int64(memberID), reviewID); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// AdminDeleteReview lets an authenticated administrator moderate any review.
+// The route is protected by RequireRole("admin").
+func (h *Handler) AdminDeleteReview(w http.ResponseWriter, r *http.Request) {
+	reviewID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || reviewID <= 0 {
+		writeError(w, http.StatusBadRequest, "INVALID_REVIEW_ID", "รหัสรีวิวไม่ถูกต้อง")
+		return
+	}
+	reviews, ok := h.Store.(interface {
+		DeleteReviewByID(context.Context, int64) error
+	})
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "REVIEW_STORE_UNAVAILABLE", "ระบบรีวิวยังไม่พร้อมใช้งาน")
+		return
+	}
+	if err := reviews.DeleteReviewByID(r.Context(), reviewID); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func internal(w http.ResponseWriter, err error) {
@@ -307,6 +421,10 @@ func (h *Handler) Routes() *http.ServeMux {
 	login := func(handler http.HandlerFunc) http.Handler {
 		return mw.RequireLogin(h.Tickets, handler)
 	}
+	mux.Handle("GET /api/reviews/mine", login(h.ListMyReviews))
+	mux.Handle("PUT /api/auth/password", login(h.ChangePassword))
+	mux.Handle("POST /api/reviews", login(h.SaveReview))
+	mux.Handle("DELETE /api/reviews/{id}", login(h.DeleteReview))
 	admin := func(handler http.HandlerFunc) http.Handler {
 		return mw.RequireLogin(h.Tickets, mw.RequireRole("admin", handler))
 	}
@@ -320,10 +438,12 @@ func (h *Handler) Routes() *http.ServeMux {
 	mux.Handle("GET /api/admin/stats", admin(h.AdminStats))
 	mux.Handle("GET /api/admin/members", admin(h.AdminMembers))
 	mux.Handle("PATCH /api/admin/members/{id}/role", admin(h.AdminSetRole))
+	mux.Handle("GET /api/admin/anime", admin(h.AdminAnimeList))
 	mux.Handle("GET /api/admin/anime/{id}", admin(h.AdminGetAnime))
 	mux.Handle("POST /api/admin/anime", admin(h.AdminCreateAnime))
 	mux.Handle("PUT /api/admin/anime/{id}", admin(h.AdminUpdateAnime))
 	mux.Handle("DELETE /api/admin/anime/{id}", admin(h.AdminDeleteAnime))
+	mux.Handle("DELETE /api/admin/reviews/{id}", admin(h.AdminDeleteReview))
 	return mux
 }
 
@@ -347,6 +467,10 @@ func writeStoreError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "BAD_ANIME_ID", "animeId ต้องเป็นจำนวนเต็มบวก")
 	case errors.Is(err, store.ErrInvalidMemberID):
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "กรุณาเข้าสู่ระบบ")
+	case errors.Is(err, store.ErrInvalidReview):
+		writeError(w, http.StatusBadRequest, "INVALID_REVIEW", "รีวิวต้องมีอย่างน้อย 10 ตัวอักษร")
+	case errors.Is(err, store.ErrInvalidReviewScore):
+		writeError(w, http.StatusBadRequest, "INVALID_REVIEW_SCORE", "คะแนนรีวิวต้องอยู่ระหว่าง 1 ถึง 10")
 	case errors.Is(err, store.ErrInvalidStatus), errors.Is(err, store.ErrInvalidProgress):
 		writeError(w, http.StatusBadRequest, "INVALID_WATCHLIST_ENTRY", "สถานะหรือความคืบหน้าของ watchlist ไม่ถูกต้อง")
 	default:

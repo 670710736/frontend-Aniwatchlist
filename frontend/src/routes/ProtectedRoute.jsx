@@ -1,8 +1,8 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 
-function ProtectRoute({ children }) {
-  const { isLoggedIn } = useAuth();
+function ProtectRoute({ children, requiredRole }) {
+  const { isLoggedIn, user } = useAuth();
   const location = useLocation();
 
   if (!isLoggedIn) {
@@ -13,6 +13,10 @@ function ProtectRoute({ children }) {
         state={{ from: `${location.pathname}${location.search}` }}
       />
     );
+  }
+
+  if (requiredRole && user?.role !== requiredRole) {
+    return <Navigate to="/" replace />;
   }
 
   return children;

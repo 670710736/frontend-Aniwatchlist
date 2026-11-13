@@ -5,8 +5,8 @@ import { request } from "../api/backend";
 import { useAuth } from "../auth/AuthContext";
 
 function Login() {
-  const [email, setEmail] = useState("demo@moviehub.test");
-  const [password, setPassword] = useState("1234");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
   const [status, setStatus] = useState("typing");
   const location = useLocation();
@@ -39,9 +39,7 @@ function Login() {
         <div className="text-center">
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-red-400">AnimeWatchlist</p>
           <h1 className="mt-3 text-3xl font-bold">เข้าสู่ระบบ</h1>
-          <p className="mt-2 text-sm text-slate-400">
-            ทดลองด้วย <span className="text-slate-300">demo@moviehub.test / 1234</span>
-          </p>
+          <p className="mt-2 text-sm text-slate-400">ใช้บัญชีที่สมัครไว้เพื่อเข้าสู่ระบบ</p>
         </div>
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-5">

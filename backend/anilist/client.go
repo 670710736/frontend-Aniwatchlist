@@ -142,34 +142,6 @@ func (c *Client) GetAnime(ctx context.Context, animeID int) (any, error) {
 	return *result.Media, nil
 }
 
-func (c *Client) ListReviews(ctx context.Context, animeID int) ([]any, error) {
-	query := `query AnimeReviews($id: Int) {
- Media(id: $id, type: ANIME) {
-  reviews(sort: RATING_DESC, perPage: 5) {
-   nodes { id summary body score user { name } }
-  }
- }
-}`
-	var result struct {
-		Media *struct {
-			Reviews struct {
-				Nodes []map[string]any `json:"nodes"`
-			} `json:"reviews"`
-		} `json:"Media"`
-	}
-	if err := c.request(ctx, query, map[string]any{"id": animeID}, &result); err != nil {
-		return nil, err
-	}
-	if result.Media == nil {
-		return []any{}, nil
-	}
-	items := make([]any, len(result.Media.Reviews.Nodes))
-	for i, review := range result.Media.Reviews.Nodes {
-		items[i] = review
-	}
-	return items, nil
-}
-
 func hasEcchi(genres []string) bool {
 	for _, genre := range genres {
 		if strings.EqualFold(genre, "Ecchi") {

@@ -61,7 +61,3 @@ func (c *Catalog) GetAnime(ctx context.Context, id int) (any, error) {
 	_ = c.Cache.UpsertAnime(ctx, anime)
 	return anime, nil
 }
-
-func (c *Catalog) ListReviews(ctx context.Context, animeID int) ([]any, error) {
-	return c.Remote.ListReviews(ctx, animeID)
-}

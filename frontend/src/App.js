@@ -11,10 +11,12 @@ import AnilistDetail from "./pages/AnilistDetail";
 import Favorites from "./pages/Favorites";
 import Profile from "./pages/Profile";
 import PopularAnime from "./pages/PopularAnime";
+import Watchlist from "./pages/Watchlist";
 import Anime from "./pages/Anime";
 import NotFound from "./pages/NotFound";
 import Footer from "./components/Footer";
 import ProtectRoute from "./routes/ProtectedRoute";
+import Admin from "./pages/Admin";
 import { AuthProvider } from "./auth/AuthContext";
 
 function App() {
@@ -32,7 +34,9 @@ function App() {
             <Route path="/popular" element={<PopularAnime />} />
             <Route path="/anime" element={<Anime />} />
             <Route path="/favorites" element={<ProtectRoute><Favorites /></ProtectRoute>} />
+            <Route path="/watchlist" element={<ProtectRoute><Watchlist /></ProtectRoute>} />
             <Route path="/profile" element={<ProtectRoute><Profile /></ProtectRoute>} />
+            <Route path="/admin" element={<ProtectRoute requiredRole="admin"><Admin /></ProtectRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
           <Footer />

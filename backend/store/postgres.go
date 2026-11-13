@@ -205,6 +205,35 @@ func (s *PostgresStore) MemberByID(ctx context.Context, id int64) (Member, error
 	return member, err
 }
 
+func (s *PostgresStore) MemberPasswordHash(ctx context.Context, id int64) (string, error) {
+	if id <= 0 {
+		return "", ErrInvalidMemberID
+	}
+	var hash string
+	err := s.Pool.QueryRow(ctx, `SELECT password_hash FROM members WHERE id=$1`, id).Scan(&hash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return hash, err
+}
+
+func (s *PostgresStore) UpdatePasswordHash(ctx context.Context, id int64, hash string) error {
+	if id <= 0 {
+		return ErrInvalidMemberID
+	}
+	if hash == "" {
+		return ErrInvalidMember
+	}
+	tag, err := s.Pool.Exec(ctx, `UPDATE members SET password_hash=$2 WHERE id=$1`, id, hash)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *PostgresStore) ListMembers(ctx context.Context) ([]Member, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT id, email, display_name, role, created_at FROM members ORDER BY created_at DESC, id DESC`)
 	if err != nil {
@@ -508,6 +537,62 @@ func (s *PostgresStore) ListReviews(ctx context.Context, animeID int64) ([]Revie
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (s *PostgresStore) ListMemberReviews(ctx context.Context, memberID int64) ([]Review, error) {
+	if memberID <= 0 {
+		return nil, ErrInvalidMemberID
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT r.id,r.member_id,r.anime_id,r.text,r.score,r.created_at,r.updated_at,m.display_name
+		FROM reviews r JOIN members m ON m.id=r.member_id WHERE r.member_id=$1 ORDER BY r.created_at DESC`, memberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]Review, 0)
+	for rows.Next() {
+		var item Review
+		if err := rows.Scan(&item.ID, &item.MemberID, &item.AnimeID, &item.Text, &item.Score,
+			&item.CreatedAt, &item.UpdatedAt, &item.Member.DisplayName); err != nil {
+			return nil, err
+		}
+		item.Member.ID = item.MemberID
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) DeleteReview(ctx context.Context, memberID, reviewID int64) error {
+	if memberID <= 0 {
+		return ErrInvalidMemberID
+	}
+	if reviewID <= 0 {
+		return ErrNotFound
+	}
+	tag, err := s.Pool.Exec(ctx, `DELETE FROM reviews WHERE id=$1 AND member_id=$2`, reviewID, memberID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// DeleteReviewByID removes a review regardless of owner. Call only from an
+// admin-authorized handler.
+func (s *PostgresStore) DeleteReviewByID(ctx context.Context, reviewID int64) error {
+	if reviewID <= 0 {
+		return ErrNotFound
+	}
+	tag, err := s.Pool.Exec(ctx, `DELETE FROM reviews WHERE id=$1`, reviewID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *PostgresStore) reviewByID(ctx context.Context, id int64) (Review, error) {

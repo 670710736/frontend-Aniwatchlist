@@ -3,7 +3,12 @@ import mockRequest from "../mock/server";
 // Mock mode is enabled by default so the frontend can run without a backend.
 // Set REACT_APP_USE_MOCK=false and REACT_APP_API_URL when using the real API.
 export const isMockMode = process.env.REACT_APP_USE_MOCK !== "false";
-const API_URL = (process.env.REACT_APP_API_URL || "").replace(/\/+$/, "");
+// In CRA development, use the same-origin proxy from package.json. This avoids
+// browser CORS failures from Codespaces' forwarded frontend origin.
+const USE_DEV_PROXY = process.env.NODE_ENV === "development";
+const API_URL = USE_DEV_PROXY
+  ? ""
+  : (process.env.REACT_APP_API_URL || "").replace(/\/+$/, "");
 const ANILIST_API_URL = "https://graphql.anilist.co";
 const BLOCKED_GENRES = new Set(["ecchi"]);
 
@@ -67,7 +72,7 @@ export async function request(path, { method = "GET", body, signal, memberId } =
 
   let response;
   try {
-    if (!isMockMode && !API_URL) {
+    if (!isMockMode && !API_URL && !USE_DEV_PROXY) {
       throw new ApiError(0, "CONFIGURATION_ERROR", "กรุณาตั้ง REACT_APP_API_URL เป็น URL ของ Backend");
     }
     response = await (isMockMode ? mockFetch : fetch)(`${API_URL}${path}`, options);
@@ -86,12 +91,22 @@ export async function request(path, { method = "GET", body, signal, memberId } =
   }
 
   if (!response.ok) {
-    const errorPayload = payload?.error || payload || {};
+    const errorPayload = payload?.error ?? payload;
     if (response.status === 401 && token && token === getToken()) {
       setToken(null);
       if (typeof window !== "undefined") window.dispatchEvent(new Event("anilist:unauthorized"));
     }
-    throw new ApiError(response.status, errorPayload.code || "HTTP_ERROR", errorPayload.message || `เกิดข้อผิดพลาด (${response.status})`);
+    const errorCode = typeof errorPayload === "object" && errorPayload !== null
+      ? errorPayload.code || payload?.code
+      : payload?.code;
+    const errorMessage = typeof errorPayload === "object" && errorPayload !== null
+      ? errorPayload.message ?? payload?.message
+      : errorPayload;
+    throw new ApiError(
+      response.status,
+      errorCode || "HTTP_ERROR",
+      errorMessage ?? `เซิร์ฟเวอร์ตอบกลับ ${response.status}`
+    );
   }
 
   return payload;
@@ -202,6 +217,15 @@ export function addAnimeToWatchlist(animeId, status = "planned") {
   return request("/api/watchlist", { method: "POST", body: { animeId: Number(animeId), status } });
 }
 
+export async function getWatchlist(signal) {
+  const result = await request("/api/watchlist", { signal });
+  return result.items || [];
+}
+
+export function removeAnimeFromWatchlist(animeId) {
+  return request(`/api/watchlist/${encodeURIComponent(animeId)}`, { method: "DELETE" });
+}
+
 export async function getFavorites(signal) {
   const result = await request("/api/favorites", { signal });
   return result.items || [];
@@ -224,4 +248,66 @@ export function postAnimeReview(animeId, { rating, text }) {
     method: "POST",
     body: { animeId: Number(animeId), rating: Number(rating), text },
   });
+}
+
+export async function getAdminStats(signal) {
+  return request("/api/admin/stats", { signal });
+}
+
+export async function getAdminMembers(signal) {
+  const result = await request("/api/admin/members", { signal });
+  return result.items || [];
+}
+
+export function setAdminMemberRole(memberId, role) {
+  return request(`/api/admin/members/${encodeURIComponent(memberId)}/role`, {
+    method: "PATCH",
+    body: { role },
+  });
+}
+
+export async function getAdminAnimeList(search = "", signal) {
+  const query = new URLSearchParams();
+  if (search.trim()) query.set("search", search.trim());
+  const suffix = query.size ? `?${query}` : "";
+  let result;
+  try {
+    result = await request(`/api/admin/anime${suffix}`, { signal });
+  } catch (error) {
+    // Older deployed API versions do not expose the admin collection route.
+    // The public catalog route returns the same cached catalog and supports
+    // GET already, so the admin UI remains usable while that backend deploys.
+    if (error.status !== 405) throw error;
+    result = await request(`/api/anime${suffix}`, { signal });
+  }
+  return result.items || [];
+}
+
+export function getAdminAnime(id, signal) {
+  return request(`/api/admin/anime/${encodeURIComponent(id)}`, { signal });
+}
+
+export function createAdminAnime(anime) {
+  return request("/api/admin/anime", { method: "POST", body: anime });
+}
+
+export function updateAdminAnime(id, anime) {
+  return request(`/api/admin/anime/${encodeURIComponent(id)}`, { method: "PUT", body: anime });
+}
+
+export function deleteAdminAnime(id) {
+  return request(`/api/admin/anime/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function deleteAnimeReview(reviewId) {
+  return request(`/api/reviews/${encodeURIComponent(reviewId)}`, { method: "DELETE" });
+}
+
+export function deleteAdminReview(reviewId) {
+  return request(`/api/admin/reviews/${encodeURIComponent(reviewId)}`, { method: "DELETE" });
+}
+
+export async function getMyReviews(signal) {
+  const result = await request("/api/reviews/mine", { signal });
+  return result.items || [];
 }

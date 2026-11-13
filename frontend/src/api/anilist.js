@@ -108,7 +108,11 @@ export async function getAnime(id, signal) {
     Media(id: $id, type: ANIME) { ${ANIME_FIELDS} }
   }`, { id: Number(id) }, signal);
 
-  if (!data.Media || !isAllowedAnime(data.Media)) throw new Error("ไม่พบอนิเมะเรื่องนี้");
+  if (!data.Media || !isAllowedAnime(data.Media)) {
+    const error = new Error("ไม่พบอนิเมะเรื่องนี้");
+    error.status = 404;
+    throw error;
+  }
   return toAnime(data.Media);
 }
 

@@ -17,6 +17,11 @@ type memberStore interface {
 	MemberByEmail(ctx context.Context, email string) (store.Member, error)
 }
 
+type passwordStore interface {
+	MemberPasswordHash(ctx context.Context, id int64) (string, error)
+	UpdatePasswordHash(ctx context.Context, id int64, hash string) error
+}
+
 type credentials struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
@@ -130,4 +135,53 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	member.PasswordHash = ""
 	writeJSON(w, http.StatusOK, map[string]any{"token": token, "user": member})
+}
+
+// ChangePassword verifies the current password before storing a new hash.
+func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	memberID, ok := memberIDFromRequest(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "กรุณาเข้าสู่ระบบ")
+		return
+	}
+	var req struct {
+		CurrentPassword string `json:"currentPassword"`
+		NewPassword     string `json:"newPassword"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_JSON", "ข้อมูลคำขอไม่ถูกต้อง")
+		return
+	}
+	if utf8.RuneCountInString(req.NewPassword) < 4 || len([]byte(req.NewPassword)) > 72 {
+		writeError(w, http.StatusBadRequest, "INVALID_NEW_PASSWORD", "รหัสผ่านใหม่ต้องมีอย่างน้อย 4 ตัวอักษรและไม่เกิน 72 ไบต์")
+		return
+	}
+	passwords, ok := h.Store.(passwordStore)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "PASSWORD_STORE_UNAVAILABLE", "ระบบเปลี่ยนรหัสผ่านยังไม่พร้อมใช้งาน")
+		return
+	}
+	hash, err := passwords.MemberPasswordHash(r.Context(), int64(memberID))
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "ไม่พบบัญชีสมาชิก กรุณาเข้าสู่ระบบใหม่")
+		} else {
+			internal(w, err)
+		}
+		return
+	}
+	if !auth.CheckPassword(hash, req.CurrentPassword) {
+		writeError(w, http.StatusUnauthorized, "CURRENT_PASSWORD_INVALID", "รหัสผ่านเดิมไม่ถูกต้อง")
+		return
+	}
+	newHash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		internal(w, err)
+		return
+	}
+	if err := passwords.UpdatePasswordHash(r.Context(), int64(memberID), newHash); err != nil {
+		internal(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

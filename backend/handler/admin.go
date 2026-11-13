@@ -19,6 +19,7 @@ type adminStore interface {
 	Stats(ctx context.Context) (store.AdminStats, error)
 	ListMembers(ctx context.Context) ([]store.Member, error)
 	UpdateMemberRole(ctx context.Context, id int64, role string) (store.Member, error)
+	SearchAnime(ctx context.Context, search, genre string) ([]store.Anime, error)
 	ListGenres(ctx context.Context) ([]string, error)
 	AdminGetAnime(ctx context.Context, id int) (store.Anime, error)
 	CreateAnime(ctx context.Context, anime store.Anime) (store.Anime, error)
@@ -224,6 +225,19 @@ func (h *Handler) AdminGetAnime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, anime)
+}
+
+func (h *Handler) AdminAnimeList(w http.ResponseWriter, r *http.Request) {
+	admin, ok := h.adminStore(w)
+	if !ok {
+		return
+	}
+	items, err := admin.SearchAnime(r.Context(), r.URL.Query().Get("search"), r.URL.Query().Get("genre"))
+	if err != nil {
+		internal(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": len(items)})
 }
 
 func (h *Handler) AdminCreateAnime(w http.ResponseWriter, r *http.Request) {

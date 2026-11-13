@@ -5,6 +5,8 @@ import { getAnimeById, searchAnime } from "../api/anilist";
 import {
   addAnimeToFavorites,
   addAnimeToWatchlist,
+  deleteAnimeReview,
+  deleteAdminReview,
   getAnimeFavoriteStatus,
   removeAnimeFromFavorites,
   getAnimeReviews,
@@ -12,9 +14,15 @@ import {
 } from "../api/backend";
 import { useAuth } from "../auth/AuthContext";
 
+function isReviewOwner(review, user) {
+  const reviewMemberId = review.memberId ?? review.member?.id;
+  return user?.id != null && reviewMemberId != null && String(reviewMemberId) === String(user.id);
+}
+
 function AnilistDetail() {
   const { id } = useParams();
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [anime, setAnime] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [status, setStatus] = useState("loading");
@@ -28,6 +36,7 @@ function AnilistDetail() {
   const [reviewText, setReviewText] = useState("");
   const [reviewError, setReviewError] = useState("");
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [deletingReviewId, setDeletingReviewId] = useState(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -116,13 +125,27 @@ function AnilistDetail() {
     setReviewSubmitting(true);
     try {
       const review = await postAnimeReview(anime.id, { rating: reviewRating, text: reviewText });
-      setReviews((current) => [review, ...current]);
+      setReviews((current) => [review, ...current.filter((item) => String(item.memberId) !== String(review.memberId))]);
       setReviewText("");
       setReviewRating("10");
     } catch (requestError) {
       setReviewError(requestError.message || "โพสต์รีวิวไม่สำเร็จ");
     } finally {
       setReviewSubmitting(false);
+    }
+  }
+
+  async function handleReviewDelete(reviewId) {
+    setReviewError("");
+    if (isAdmin && !window.confirm("ยืนยันลบรีวิวนี้หรือไม่? การลบไม่สามารถย้อนกลับได้")) return;
+    setDeletingReviewId(reviewId);
+    try {
+      await (isAdmin ? deleteAdminReview(reviewId) : deleteAnimeReview(reviewId));
+      setReviews((current) => current.filter((review) => String(review.id) !== String(reviewId)));
+    } catch (requestError) {
+      setReviewError(requestError.message || "ลบรีวิวไม่สำเร็จ");
+    } finally {
+      setDeletingReviewId(null);
     }
   }
 
@@ -200,19 +223,32 @@ function AnilistDetail() {
 
       <section className="mt-12 border-t border-white/10 pt-8">
         <div className="flex items-center justify-between gap-4">
-          <h2 className="text-2xl font-bold text-white">รีวิวจากผู้ชม</h2>
+          <h2 className="text-2xl font-bold text-white">รีวิวจากสมาชิก</h2>
           <span className="text-sm text-slate-500">{reviews.length} รีวิว</span>
         </div>
         <div className="mt-4 space-y-4">
           {reviews.length ? reviews.map((review) => (
             <article key={review.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
               <div className="flex justify-between gap-3 text-sm text-white">
-                <strong>{review.user?.name || "ผู้ชม AniList"}</strong>
-                <span className="text-amber-300">★ {review.score || review.rating || 0}</span>
+                <strong>{review.member?.displayName || review.user?.name || "สมาชิก"}</strong>
+                <div className="flex items-center gap-3">
+                  <span className="text-amber-300">★ {review.score ?? review.rating ?? 0}/10</span>
+                  {isLoggedIn && (isAdmin || isReviewOwner(review, user)) && (
+                    <button
+                      type="button"
+                      onClick={() => handleReviewDelete(review.id)}
+                      disabled={deletingReviewId === review.id}
+                      className="text-xs text-red-300 hover:text-red-200 disabled:opacity-50"
+                      aria-label={isAdmin && !isReviewOwner(review, user) ? "ลบรีวิวของสมาชิก" : "ลบรีวิวของฉัน"}
+                    >
+                      {deletingReviewId === review.id ? "กำลังลบ..." : "ลบรีวิว"}
+                    </button>
+                  )}
+                </div>
               </div>
-              <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-400">{review.body || review.text || review.summary}</p>
+              <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-400">{review.text}</p>
             </article>
-          )) : <p className="text-slate-500">ยังไม่มีรีวิวสำหรับเรื่องนี้</p>}
+          )) : <p className="text-slate-500">ยังไม่มีรีวิวจากสมาชิกสำหรับเรื่องนี้</p>}
         </div>
         {isLoggedIn ? (
           <form onSubmit={handleReviewSubmit} className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4">

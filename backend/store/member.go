@@ -104,6 +104,45 @@ func (s *MemoryStore) MemberByID(ctx context.Context, id int64) (Member, error) 
 	return member, nil
 }
 
+// MemberPasswordHash returns only the stored password hash for verification.
+func (s *MemoryStore) MemberPasswordHash(ctx context.Context, id int64) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if id <= 0 {
+		return "", ErrInvalidMemberID
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	member, ok := s.members[id]
+	if !ok {
+		return "", ErrNotFound
+	}
+	return member.PasswordHash, nil
+}
+
+// UpdatePasswordHash replaces a member's password hash.
+func (s *MemoryStore) UpdatePasswordHash(ctx context.Context, id int64, hash string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if id <= 0 {
+		return ErrInvalidMemberID
+	}
+	if hash == "" {
+		return ErrInvalidMember
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	member, ok := s.members[id]
+	if !ok {
+		return ErrNotFound
+	}
+	member.PasswordHash = hash
+	s.members[id] = member
+	return nil
+}
+
 // ListMembers returns public member records, newest first, for admin views.
 func (s *MemoryStore) ListMembers(ctx context.Context) ([]Member, error) {
 	if err := ctx.Err(); err != nil {
