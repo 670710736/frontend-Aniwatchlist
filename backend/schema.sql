@@ -1,139 +1,405 @@
--- AniWatchlist database schema (PostgreSQL 14+)
--- AniList anime metadata is cached locally and kept separate from the
--- member-owned watchlist and favorites.
+--
+-- PostgreSQL database dump
+--
 
-BEGIN;
 
--- ---------------------------------------------------------------------------
--- anime: cached AniList anime metadata (id is the AniList Media ID)
--- ---------------------------------------------------------------------------
-CREATE TABLE anime (
-    id                 BIGINT       PRIMARY KEY CHECK (id > 0),
-    title              JSONB        NOT NULL,
-    cover_image        JSONB        NOT NULL DEFAULT '{}'::JSONB,
-    banner_image       TEXT,
-    description        TEXT,
-    average_score      SMALLINT     CHECK (average_score BETWEEN 0 AND 100),
-    popularity         INTEGER      NOT NULL DEFAULT 0 CHECK (popularity >= 0),
-    episodes           INTEGER      CHECK (episodes IS NULL OR episodes >= 0),
-    status             VARCHAR(20)  NOT NULL
-                       CHECK (status IN ('FINISHED', 'RELEASING', 'NOT_YET_RELEASED', 'CANCELLED', 'HIATUS')),
-    format             VARCHAR(20)  NOT NULL
-                       CHECK (format IN ('TV', 'TV_SHORT', 'MOVIE', 'SPECIAL', 'OVA', 'ONA', 'MUSIC')),
-    source_updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    created_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    CHECK (jsonb_typeof(title) = 'object'),
-    CHECK (jsonb_typeof(cover_image) = 'object')
+-- Dumped from database version 16.16
+-- Dumped by pg_dump version 16.16
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: anime; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.anime (
+    id bigint NOT NULL,
+    title jsonb NOT NULL,
+    cover_image jsonb DEFAULT '{}'::jsonb NOT NULL,
+    banner_image text,
+    description text,
+    average_score smallint,
+    popularity integer DEFAULT 0 NOT NULL,
+    episodes integer,
+    status character varying(20) NOT NULL,
+    format character varying(20) NOT NULL,
+    source_updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT anime_average_score_check CHECK (((average_score >= 0) AND (average_score <= 100))),
+    CONSTRAINT anime_cover_image_check CHECK ((jsonb_typeof(cover_image) = 'object'::text)),
+    CONSTRAINT anime_episodes_check CHECK (((episodes IS NULL) OR (episodes >= 0))),
+    CONSTRAINT anime_format_check CHECK (((format)::text = ANY ((ARRAY['TV'::character varying, 'TV_SHORT'::character varying, 'MOVIE'::character varying, 'SPECIAL'::character varying, 'OVA'::character varying, 'ONA'::character varying, 'MUSIC'::character varying])::text[]))),
+    CONSTRAINT anime_id_check CHECK ((id > 0)),
+    CONSTRAINT anime_popularity_check CHECK ((popularity >= 0)),
+    CONSTRAINT anime_status_check CHECK (((status)::text = ANY ((ARRAY['FINISHED'::character varying, 'RELEASING'::character varying, 'NOT_YET_RELEASED'::character varying, 'CANCELLED'::character varying, 'HIATUS'::character varying])::text[]))),
+    CONSTRAINT anime_title_check CHECK ((jsonb_typeof(title) = 'object'::text))
 );
 
-CREATE INDEX idx_anime_title_romaji_lower ON anime (lower(title->>'romaji'));
-CREATE INDEX idx_anime_title_english_lower ON anime (lower(title->>'english'));
-CREATE INDEX idx_anime_score ON anime (average_score DESC NULLS LAST);
-CREATE INDEX idx_anime_popularity ON anime (popularity DESC);
 
--- ---------------------------------------------------------------------------
--- genres and anime_genres: AniList genres are names, not numeric genre IDs.
--- position preserves the order returned by AniList.
--- ---------------------------------------------------------------------------
-CREATE TABLE genres (
-    name VARCHAR(50) PRIMARY KEY
+--
+-- Name: anime_genres; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.anime_genres (
+    anime_id bigint NOT NULL,
+    genre character varying(50) NOT NULL,
+    "position" smallint NOT NULL,
+    CONSTRAINT anime_genres_position_check CHECK (("position" >= 0))
 );
 
-CREATE TABLE anime_genres (
-    anime_id BIGINT      NOT NULL REFERENCES anime (id) ON DELETE CASCADE,
-    genre    VARCHAR(50) NOT NULL REFERENCES genres (name),
-    position SMALLINT    NOT NULL CHECK (position >= 0),
-    PRIMARY KEY (anime_id, genre),
-    UNIQUE (anime_id, position)
+
+--
+-- Name: anime_lists; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.anime_lists (
+    list character varying(20) NOT NULL,
+    anime_id bigint NOT NULL,
+    rank smallint NOT NULL,
+    synced_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT anime_lists_list_check CHECK (((list)::text = ANY ((ARRAY['trending'::character varying, 'popular'::character varying])::text[]))),
+    CONSTRAINT anime_lists_rank_check CHECK ((rank >= 1))
 );
 
-CREATE INDEX idx_anime_genres_genre ON anime_genres (genre);
 
--- ---------------------------------------------------------------------------
--- anime_lists: snapshot lists from AniList (trending/popular), refreshed as a
--- whole when the catalog is synced.
--- ---------------------------------------------------------------------------
-CREATE TABLE anime_lists (
-    list       VARCHAR(20) NOT NULL CHECK (list IN ('trending', 'popular')),
-    anime_id   BIGINT      NOT NULL REFERENCES anime (id) ON DELETE CASCADE,
-    rank       SMALLINT    NOT NULL CHECK (rank >= 1),
-    synced_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (list, anime_id),
-    UNIQUE (list, rank)
+--
+-- Name: favorites; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.favorites (
+    member_id bigint NOT NULL,
+    anime_id bigint NOT NULL,
+    added_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT favorites_anime_id_check CHECK ((anime_id > 0))
 );
 
-CREATE INDEX idx_anime_lists_anime ON anime_lists (anime_id);
 
--- ---------------------------------------------------------------------------
--- members: registered AniWatchlist accounts
--- ---------------------------------------------------------------------------
-CREATE TABLE members (
-    id             BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    email          VARCHAR(255) NOT NULL,
-    password_hash  VARCHAR(255) NOT NULL, -- bcrypt hash; never store plaintext passwords
-    display_name   VARCHAR(50)  NOT NULL
-                   CHECK (char_length(btrim(display_name)) BETWEEN 1 AND 50),
-    avatar_url     VARCHAR(500),
-    role           VARCHAR(10)  NOT NULL DEFAULT 'member'
-                   CHECK (role IN ('member', 'admin')),
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+--
+-- Name: genres; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.genres (
+    name character varying(50) NOT NULL
 );
 
--- Email addresses are unique regardless of letter casing. Normalize to lower
--- case in the application before inserts and login lookups as well.
-CREATE UNIQUE INDEX uq_members_email_lower ON members (lower(email));
 
--- ---------------------------------------------------------------------------
--- watchlist_entries: one status and episode progress per member/anime pair
--- anime_id is the stable ID from AniList. It intentionally has no FK to anime:
--- users can track any AniList title even when it is not in the local cache.
--- ---------------------------------------------------------------------------
-CREATE TABLE watchlist_entries (
-    member_id   BIGINT      NOT NULL REFERENCES members (id) ON DELETE CASCADE,
-    anime_id    BIGINT      NOT NULL CHECK (anime_id > 0),
-    status      VARCHAR(10) NOT NULL DEFAULT 'planned'
-                CHECK (status IN ('planned', 'watching', 'completed')),
-    progress    INTEGER     NOT NULL DEFAULT 0 CHECK (progress >= 0),
-    added_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (member_id, anime_id)
+--
+-- Name: members; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.members (
+    id bigint NOT NULL,
+    email character varying(255) NOT NULL,
+    password_hash character varying(255) NOT NULL,
+    display_name character varying(50) NOT NULL,
+    avatar_url character varying(500),
+    role character varying(10) DEFAULT 'member'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT members_display_name_check CHECK (((char_length(btrim((display_name)::text)) >= 1) AND (char_length(btrim((display_name)::text)) <= 50))),
+    CONSTRAINT members_role_check CHECK (((role)::text = ANY ((ARRAY['member'::character varying, 'admin'::character varying])::text[])))
 );
 
-CREATE INDEX idx_watchlist_member_updated
-    ON watchlist_entries (member_id, updated_at DESC);
-CREATE INDEX idx_watchlist_anime ON watchlist_entries (anime_id);
 
--- ---------------------------------------------------------------------------
--- favorites: one favorite relationship per member/anime pair
--- ---------------------------------------------------------------------------
-CREATE TABLE favorites (
-    member_id  BIGINT      NOT NULL REFERENCES members (id) ON DELETE CASCADE,
-    anime_id   BIGINT      NOT NULL CHECK (anime_id > 0),
-    added_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (member_id, anime_id)
+--
+-- Name: members_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.members ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.members_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
 );
 
-CREATE INDEX idx_favorites_member_added
-    ON favorites (member_id, added_at DESC);
-CREATE INDEX idx_favorites_anime ON favorites (anime_id);
 
--- ---------------------------------------------------------------------------
--- reviews: optional member-written reviews (AniList public reviews remain
--- fetched from AniList; this table is for reviews created in AniWatchlist).
--- ---------------------------------------------------------------------------
-CREATE TABLE reviews (
-    id          BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    member_id   BIGINT      NOT NULL REFERENCES members (id) ON DELETE CASCADE,
-    anime_id    BIGINT      NOT NULL CHECK (anime_id > 0),
-    text        TEXT        NOT NULL CHECK (char_length(btrim(text)) >= 10),
-    score       SMALLINT    CHECK (score IS NULL OR score BETWEEN 1 AND 10),
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (member_id, anime_id)
+--
+-- Name: reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.reviews (
+    id bigint NOT NULL,
+    member_id bigint NOT NULL,
+    anime_id bigint NOT NULL,
+    text text NOT NULL,
+    score smallint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT reviews_anime_id_check CHECK ((anime_id > 0)),
+    CONSTRAINT reviews_score_check CHECK (((score IS NULL) OR ((score >= 1) AND (score <= 10)))),
+    CONSTRAINT reviews_text_check CHECK ((char_length(btrim(text)) >= 10))
 );
 
-CREATE INDEX idx_reviews_anime_created ON reviews (anime_id, created_at DESC);
 
-COMMIT;
+--
+-- Name: reviews_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.reviews ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.reviews_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: watchlist_entries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.watchlist_entries (
+    member_id bigint NOT NULL,
+    anime_id bigint NOT NULL,
+    status character varying(10) DEFAULT 'planned'::character varying NOT NULL,
+    progress integer DEFAULT 0 NOT NULL,
+    added_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT watchlist_entries_anime_id_check CHECK ((anime_id > 0)),
+    CONSTRAINT watchlist_entries_progress_check CHECK ((progress >= 0)),
+    CONSTRAINT watchlist_entries_status_check CHECK (((status)::text = ANY ((ARRAY['planned'::character varying, 'watching'::character varying, 'completed'::character varying])::text[])))
+);
+
+
+--
+-- Name: anime_genres anime_genres_anime_id_position_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.anime_genres
+    ADD CONSTRAINT anime_genres_anime_id_position_key UNIQUE (anime_id, "position");
+
+
+--
+-- Name: anime_genres anime_genres_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.anime_genres
+    ADD CONSTRAINT anime_genres_pkey PRIMARY KEY (anime_id, genre);
+
+
+--
+-- Name: anime_lists anime_lists_list_rank_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.anime_lists
+    ADD CONSTRAINT anime_lists_list_rank_key UNIQUE (list, rank);
+
+
+--
+-- Name: anime_lists anime_lists_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.anime_lists
+    ADD CONSTRAINT anime_lists_pkey PRIMARY KEY (list, anime_id);
+
+
+--
+-- Name: anime anime_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.anime
+    ADD CONSTRAINT anime_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: favorites favorites_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.favorites
+    ADD CONSTRAINT favorites_pkey PRIMARY KEY (member_id, anime_id);
+
+
+--
+-- Name: genres genres_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.genres
+    ADD CONSTRAINT genres_pkey PRIMARY KEY (name);
+
+
+--
+-- Name: members members_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.members
+    ADD CONSTRAINT members_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: reviews reviews_member_id_anime_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reviews
+    ADD CONSTRAINT reviews_member_id_anime_id_key UNIQUE (member_id, anime_id);
+
+
+--
+-- Name: reviews reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reviews
+    ADD CONSTRAINT reviews_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: watchlist_entries watchlist_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.watchlist_entries
+    ADD CONSTRAINT watchlist_entries_pkey PRIMARY KEY (member_id, anime_id);
+
+
+--
+-- Name: idx_anime_genres_genre; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_anime_genres_genre ON public.anime_genres USING btree (genre);
+
+
+--
+-- Name: idx_anime_lists_anime; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_anime_lists_anime ON public.anime_lists USING btree (anime_id);
+
+
+--
+-- Name: idx_anime_popularity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_anime_popularity ON public.anime USING btree (popularity DESC);
+
+
+--
+-- Name: idx_anime_score; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_anime_score ON public.anime USING btree (average_score DESC NULLS LAST);
+
+
+--
+-- Name: idx_anime_title_english_lower; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_anime_title_english_lower ON public.anime USING btree (lower((title ->> 'english'::text)));
+
+
+--
+-- Name: idx_anime_title_romaji_lower; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_anime_title_romaji_lower ON public.anime USING btree (lower((title ->> 'romaji'::text)));
+
+
+--
+-- Name: idx_favorites_anime; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_favorites_anime ON public.favorites USING btree (anime_id);
+
+
+--
+-- Name: idx_favorites_member_added; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_favorites_member_added ON public.favorites USING btree (member_id, added_at DESC);
+
+
+--
+-- Name: idx_reviews_anime_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_reviews_anime_created ON public.reviews USING btree (anime_id, created_at DESC);
+
+
+--
+-- Name: idx_watchlist_anime; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_watchlist_anime ON public.watchlist_entries USING btree (anime_id);
+
+
+--
+-- Name: idx_watchlist_member_updated; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_watchlist_member_updated ON public.watchlist_entries USING btree (member_id, updated_at DESC);
+
+
+--
+-- Name: uq_members_email_lower; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_members_email_lower ON public.members USING btree (lower((email)::text));
+
+
+--
+-- Name: anime_genres anime_genres_anime_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.anime_genres
+    ADD CONSTRAINT anime_genres_anime_id_fkey FOREIGN KEY (anime_id) REFERENCES public.anime(id) ON DELETE CASCADE;
+
+
+--
+-- Name: anime_genres anime_genres_genre_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.anime_genres
+    ADD CONSTRAINT anime_genres_genre_fkey FOREIGN KEY (genre) REFERENCES public.genres(name);
+
+
+--
+-- Name: anime_lists anime_lists_anime_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.anime_lists
+    ADD CONSTRAINT anime_lists_anime_id_fkey FOREIGN KEY (anime_id) REFERENCES public.anime(id) ON DELETE CASCADE;
+
+
+--
+-- Name: favorites favorites_member_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.favorites
+    ADD CONSTRAINT favorites_member_id_fkey FOREIGN KEY (member_id) REFERENCES public.members(id) ON DELETE CASCADE;
+
+
+--
+-- Name: reviews reviews_member_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reviews
+    ADD CONSTRAINT reviews_member_id_fkey FOREIGN KEY (member_id) REFERENCES public.members(id) ON DELETE CASCADE;
+
+
+--
+-- Name: watchlist_entries watchlist_entries_member_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.watchlist_entries
+    ADD CONSTRAINT watchlist_entries_member_id_fkey FOREIGN KEY (member_id) REFERENCES public.members(id) ON DELETE CASCADE;
+
+
+--
+-- PostgreSQL database dump complete
+--
+
+

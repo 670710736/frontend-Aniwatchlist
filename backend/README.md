@@ -45,6 +45,34 @@ The frontend remains in mock mode until explicitly changed. When ready to
 connect it later, copy `frontend/.env.example` to `frontend/.env` and restart
 the React development server.
 
+## Import to Supabase
+
+For a new, empty Supabase database, copy the **Session pooler** connection URL
+from the project dashboard. From the repository root, enter it without adding
+it to shell history, then import the full schema-and-data dump:
+
+```sh
+read -r -s -p "Supabase connection string: " SUPA_URL
+printf '\n'
+export SUPA_URL
+docker run --rm -i --network host -e SUPA_URL postgres:16 \
+  sh -c 'psql "$SUPA_URL" -v ON_ERROR_STOP=1' < backend/anilist-dump.sql
+```
+
+After the import completes, enable row-level security immediately:
+
+```sh
+docker run --rm -i --network host -e SUPA_URL postgres:16 \
+  sh -c 'psql "$SUPA_URL" -v ON_ERROR_STOP=1' < backend/supabase-rls.sql
+unset SUPA_URL
+```
+
+The dump contains `CREATE TABLE`, `COPY`, and constraints, but does not enable
+RLS. The RLS script enables it on all application tables and creates no client
+policies, so Data API roles cannot access user data directly. Keep all database
+credentials server-side; the Go backend should be the database client. These
+steps are for an empty database because the dump is not idempotent.
+
 ## API routes
 
 - Public: `GET /api/anime`, `GET /api/anime/{id}`, `GET /api/reviews`,
