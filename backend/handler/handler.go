@@ -108,7 +108,11 @@ func (h *Handler) ListReviews(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "ANIME_SERVICE_UNAVAILABLE", "ยังไม่ได้ตั้งค่าบริการรีวิวอนิเมะ")
 		return
 	}
-	animeID, err := parseAnimeID(r.URL.Query().Get("animeId"))
+	rawAnimeID := r.PathValue("id")
+	if rawAnimeID == "" {
+		rawAnimeID = r.URL.Query().Get("animeId")
+	}
+	animeID, err := parseAnimeID(rawAnimeID)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -294,6 +298,7 @@ func (h *Handler) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/anime", h.SearchAnime)
 	mux.HandleFunc("GET /api/anime/{id}", h.GetAnime)
+	mux.HandleFunc("GET /api/anime/{id}/reviews", h.ListReviews)
 	mux.HandleFunc("GET /api/reviews", h.ListReviews)
 	mux.HandleFunc("GET /api/genres", h.Genres)
 	mux.HandleFunc("POST /api/auth/register", h.Register)

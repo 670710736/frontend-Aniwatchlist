@@ -61,14 +61,16 @@ func main() {
 	}
 
 	// Keep timeout responses in the same JSON error format as other API errors.
-	apiHandler := http.TimeoutHandler(api.Routes(), 10*time.Second,
-		`{"error":{"code":"REQUEST_TIMEOUT","message":"คำขอใช้เวลานานเกินไป กรุณาลองอีกครั้ง"}}`)
-	app := mw.Logging(mw.Recovery(mw.CORS(apiHandler)))
+	mux := mw.Recovery(http.TimeoutHandler(api.Routes(), 10*time.Second,
+		`{"error":{"code":"REQUEST_TIMEOUT","message":"คำขอใช้เวลานานเกินไป กรุณาลองอีกครั้ง"}}`))
+	origins := strings.Split(os.Getenv("ALLOWED_ORIGINS"), ",")
+	app := mw.Logging(mw.CORS(origins, mux))
 
-	addr := os.Getenv("ADDR")
-	if addr == "" {
-		addr = ":8080"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
 	}
+	addr := ":" + port
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -79,7 +81,7 @@ func main() {
 
 	serverErrors := make(chan error, 1)
 	go func() {
-		log.Printf("AniWatchlist API listening on %s", addr)
+		log.Printf("AniWatchlist API listening on %s; allowed origins=%v", addr, origins)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErrors <- err
 		}
