@@ -1,8 +1,17 @@
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
-test('renders learn react link', () => {
+jest.mock('react-router-dom', () => ({
+  BrowserRouter: ({ children }) => children,
+  Routes: () => null,
+  Route: () => null,
+}));
+
+jest.mock('./components/Navbar', () => () => <nav>Aniwatchlist navigation</nav>);
+jest.mock('./components/Footer', () => () => <footer>Aniwatchlist footer</footer>);
+
+test('renders the application shell', () => {
   render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+  expect(screen.getByText('Aniwatchlist navigation')).toBeInTheDocument();
+  expect(screen.getByText('Aniwatchlist footer')).toBeInTheDocument();
 });

@@ -1,7 +1,11 @@
 import mockRequest from "../mock/server";
-import { request, setToken } from "./backend";
 
 jest.mock("../mock/server", () => jest.fn());
+
+// backend.js reads this flag when the module is loaded. Tests exercise its
+// mock-server adapter regardless of the developer's local .env settings.
+process.env.REACT_APP_USE_MOCK = "true";
+const { request, setToken } = require("./backend");
 
 beforeEach(() => {
   mockRequest.mockReset();
